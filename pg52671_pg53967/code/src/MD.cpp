@@ -137,7 +137,7 @@ int main()
     printf("  FOR XENON,   TYPE 'Xe' THEN PRESS 'return' TO CONTINUE\n");
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     //scanf("%s",atype);
-    strncpy(atype, "AR", 2);
+    strncpy(atype, "AR",2);
     if (strcmp(atype,"He")==0) {
         
         VolFac = 1.8399744000000005e-29;
@@ -197,7 +197,7 @@ int main()
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     printf("\n\n  ENTER THE INTIAL TEMPERATURE OF YOUR GAS IN KELVIN\n");
     //scanf("%lf",&Tinit);
-    Tinit = 10;
+    Tinit = 100;
     // Make sure temperature is a positive number!
     if (Tinit<0.) {
         printf("\n  !!!!! ABSOLUTE TEMPERATURE MUST BE A POSITIVE NUMBER!  PLEASE TRY AGAIN WITH A POSITIVE TEMPERATURE!!!\n");
@@ -212,7 +212,7 @@ int main()
     printf("  NUMBER DENSITY OF LIQUID ARGON AT 1 ATM AND 87 K IS ABOUT 35000 moles/m^3\n");
     
     //scanf("%lf",&rho);
-    rho = 10;
+    rho = 35000;
     N = 10*216;
     Vol = N/(rho*NA);
     
@@ -473,9 +473,9 @@ double Potential() {
                     r2 += (r[i][k]-r[j][k])*(r[i][k]-r[j][k]);
                 }
                 //rnorm=sqrt(r2);
-                //quot=sigma/rnorm;//  = r^-2
-                term1 = pow(quot,-6.);
-                term2 = pow(quot,-3.);
+                quot=sigma/r2;//  = r^-2
+                term1 = quot*quot*quot*quot*quot*quot; //=pow(quot,6);
+                term2 = quot*quot*quot;//=pow(quot,3)
                 
                 Pot += 4*epsilon*(term1 - term2);
                 
@@ -515,11 +515,13 @@ void computeAccelerations() {
             }
             
             //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-            f = 24 * (2 * pow(rSqd, -7) - pow(rSqd, -4));
+            double inv_rSqd = 1/rSqd;
+            f = 24 * (2 * (inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd) - (inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd));
             for (k = 0; k < 3; k++) {
+                double val = rij[k] * f;
                 //  from F = ma, where m = 1 in natural units!
-                a[i][k] += rij[k] * f;
-                a[j][k] -= rij[k] * f;
+                a[i][k] += val;//rij[k] * f;
+                a[j][k] -= val;//rij[k] * f;
             }
         }
     }

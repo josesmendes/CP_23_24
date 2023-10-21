@@ -98,7 +98,7 @@ int main()
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     printf("\n  ENTER A TITLE FOR YOUR CALCULATION!\n");
     //scanf("%s",prefix);
-    strncpy(prefix, "teste", 2);
+    strncpy(prefix, "cp",2);
     strcpy(tfn,prefix);
     strcat(tfn,"_traj.xyz");
     strcpy(ofn,prefix);
@@ -137,7 +137,8 @@ int main()
     printf("  FOR XENON,   TYPE 'Xe' THEN PRESS 'return' TO CONTINUE\n");
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     //scanf("%s",atype);
-    strncpy(atype, "AR",2);
+    strncpy(atype, "Ar",2);
+    
     if (strcmp(atype,"He")==0) {
         
         VolFac = 1.8399744000000005e-29;
@@ -197,7 +198,7 @@ int main()
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     printf("\n\n  ENTER THE INTIAL TEMPERATURE OF YOUR GAS IN KELVIN\n");
     //scanf("%lf",&Tinit);
-    Tinit = 100;
+    Tinit=100;
     // Make sure temperature is a positive number!
     if (Tinit<0.) {
         printf("\n  !!!!! ABSOLUTE TEMPERATURE MUST BE A POSITIVE NUMBER!  PLEASE TRY AGAIN WITH A POSITIVE TEMPERATURE!!!\n");
@@ -212,7 +213,7 @@ int main()
     printf("  NUMBER DENSITY OF LIQUID ARGON AT 1 ATM AND 87 K IS ABOUT 35000 moles/m^3\n");
     
     //scanf("%lf",&rho);
-    rho = 35000;
+    rho=35000;
     N = 10*216;
     Vol = N/(rho*NA);
     
@@ -378,13 +379,12 @@ void initialize() {
     p = 0;
     //  initialize positions
     for (i=0; i<n; i++) {
-        double ival = (i + 0.5)*pos;
         for (j=0; j<n; j++) {
-            double jval = (j + 0.5)*pos;
             for (k=0; k<n; k++) {
                 if (p<N) {
-                    r[p][0] = ival;
-                    r[p][1] = jval;
+                    
+                    r[p][0] = (i + 0.5)*pos;
+                    r[p][1] = (j + 0.5)*pos;
                     r[p][2] = (k + 0.5)*pos;
                 }
                 p++;
@@ -466,20 +466,31 @@ double Potential() {
     
     Pot=0.;
     for (i=0; i<N; i++) {
-        for (j=0; j<N; j++) {
-            if (j!=i) {
+        //double i_val_0 = r[i][0];
+        //double i_val_1 = r[i][1];
+        //double i_val_2 = r[i][2];
+        for (j=i+1; j<N; j++) {
+            //double j_val_0 = r[j][0];
+            //double j_val_1 = r[j][1];
+            //double j_val_2 = r[j][2];
+            //if (j!=i) {
                 r2=0.;
                 for (k=0; k<3; k++) {
                     r2 += (r[i][k]-r[j][k])*(r[i][k]-r[j][k]);
+                    //r2 += (i_val_0-j_val_0)*(i_val_0-j_val_0);
+                    //r2 += (i_val_1-j_val_1)*(i_val_1-j_val_1);
+                    //r2 += (i_val_2-j_val_2)*(i_val_2-j_val_2);
                 }
                 //rnorm=sqrt(r2);
-                quot=sigma/r2;//  = r^-2
-                term1 = quot*quot*quot*quot*quot*quot; //=pow(quot,6);
-                term2 = quot*quot*quot;//=pow(quot,3)
+                //quot=sigma/rnorm;
+                double r2_invert=sigma/r2;
+                //term1 = pow(quot,12.);
+                //term2 = pow(quot,6.);
+                term2 = r2_invert*r2_invert*r2_invert;//pow(quot,6.);
+                term1 = term2*term2;
+                Pot += 2*(4*epsilon*(term1 - term2));
                 
-                Pot += 4*epsilon*(term1 - term2);
-                
-            }
+            //}
         }
     }
     
@@ -503,25 +514,50 @@ void computeAccelerations() {
         }
     }
     for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
+        //double i_val_0 = r[i][0];
+        //double i_val_1 = r[i][1];
+        //double i_val_2 = r[i][2];
+        
+        //double a_i_val_0 = a[i][0];
+        //double a_i_val_1 = a[i][1];
+        //double a_i_val_2 = a[i][2];
         for (j = i+1; j < N; j++) {
+            //double j_val_0 = r[j][0];
+            //double j_val_1 = r[j][1];
+            //double j_val_2 = r[j][2];
+
+            //double a_j_val_0 = a[j][0];
+            //double a_j_val_1 = a[j][1];
+            //double a_j_val_2 = a[j][2];
             // initialize r^2 to zero
-            rSqd = 0;
+            rSqd = 0.;
             
             for (k = 0; k < 3; k++) {
                 //  component-by-componenent position of i relative to j
                 rij[k] = r[i][k] - r[j][k];
+                //rij[0] = r[i][0] - r[j][0];
+                //rij[1] = r[i][1] - r[j][1];
+                //rij[2] = r[i][2] - r[j][2];
                 //  sum of squares of the components
                 rSqd += rij[k] * rij[k];
+                //rSqd += rij[0] * rij[0];
+                //rSqd += rij[1] * rij[1];
+                //rSqd += rij[2] * rij[2];
             }
-            
+            double rSqd_inv = 1./rSqd;
             //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-            double inv_rSqd = 1/rSqd;
-            f = 24 * (2 * (inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd) - (inv_rSqd*inv_rSqd*inv_rSqd*inv_rSqd));
+            f = 24 * (2 * (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv) - (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv));
+            //f = 24 * (2 * (pow(rSqd,-7)) - (pow(rSqd,-4)));
             for (k = 0; k < 3; k++) {
-                double val = rij[k] * f;
                 //  from F = ma, where m = 1 in natural units!
-                a[i][k] += val;//rij[k] * f;
-                a[j][k] -= val;//rij[k] * f;
+                a[i][k] += rij[k] * f;
+                //a_i_val_0 += rij[0] * f;
+                //a_i_val_1 += rij[1] * f;
+                //a_i_val_2 += rij[2] * f;
+                a[j][k] -=rij[k] * f;
+                //a_j_val_0 -= rij[0] * f;
+                //a_j_val_1 -= rij[1] * f;
+                //a_j_val_2 -= rij[2] * f;
             }
         }
     }

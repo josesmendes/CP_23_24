@@ -60,6 +60,8 @@ double F[MAXPART][3];
 
 // atom type
 char atype[10];
+//pot
+double Pot;
 //  Function prototypes
 //  initialize positions on simple cubic lattice, also calls function to initialize velocities
 void initialize();  
@@ -75,7 +77,7 @@ double gaussdist();
 //  Initialize velocities according to user-supplied initial Temperature (Tinit)
 void initializeVelocities();
 //  Compute total potential energy from particle coordinates
-double Potential();
+void Potential_plus_Accelaration();
 //  Compute mean squared velocity from particle velocities
 double MeanSquaredVelocity();
 //  Compute total kinetic energy from particle mass and velocities
@@ -88,7 +90,7 @@ int main()
     int i;
     double dt, Vol, Temp, Press, Pavg, Tavg, rho;
     double VolFac, TempFac, PressFac, timefac;
-    double KE, PE, mvs, gc, Z;
+    double KE, mvs, gc, Z;
     char trash[10000], prefix[1000], tfn[1000], ofn[1000], afn[1000];
     FILE *infp, *tfp, *ofp, *afp;
     
@@ -314,8 +316,8 @@ int main()
         //  We would also like to use the IGL to try to see if we can extract the gas constant
         mvs = MeanSquaredVelocity();
         KE = Kinetic();
-        PE = Potential();
-        
+        //PE = Potential();
+        //computeAccelerations();
         // Temperature from Kinetic Theory
         Temp = m*mvs/(3*kB) * TempFac;
         
@@ -328,7 +330,7 @@ int main()
         Tavg += Temp;
         Pavg += Press;
         
-        fprintf(ofp,"  %8.4e  %20.8f  %20.8f %20.8f  %20.8f  %20.8f \n",i*dt*timefac,Temp,Press,KE, PE, KE+PE);
+        fprintf(ofp,"  %8.4e  %20.12f  %20.12f %20.12f  %20.12f  %20.12f \n",i*dt*timefac,Temp,Press,KE, Pot, KE+Pot);
         
         
     }
@@ -460,53 +462,11 @@ double Kinetic() { //Write Function here!
 
 
 // Function to calculate the potential energy of the system
-double Potential() {
-    double quot, r2, rnorm, term1, term2, Pot;
+void Potential_plus_Accelaration() {
     int i, j, k;
-    
-    Pot=0.;
-    for (i=0; i<N; i++) {
-        //double i_val_0 = r[i][0];
-        //double i_val_1 = r[i][1];
-        //double i_val_2 = r[i][2];
-        for (j=i+1; j<N; j++) {
-            //double j_val_0 = r[j][0];
-            //double j_val_1 = r[j][1];
-            //double j_val_2 = r[j][2];
-            //if (j!=i) {
-                r2=0.;
-                for (k=0; k<3; k++) {
-                    r2 += (r[i][k]-r[j][k])*(r[i][k]-r[j][k]);
-                    //r2 += (i_val_0-j_val_0)*(i_val_0-j_val_0);
-                    //r2 += (i_val_1-j_val_1)*(i_val_1-j_val_1);
-                    //r2 += (i_val_2-j_val_2)*(i_val_2-j_val_2);
-                }
-                //rnorm=sqrt(r2);
-                //quot=sigma/rnorm;
-                double r2_invert=sigma/r2;
-                //term1 = pow(quot,12.);
-                //term2 = pow(quot,6.);
-                term2 = r2_invert*r2_invert*r2_invert;//pow(quot,6.);
-                term1 = term2*term2;
-                Pot += 2*(4*epsilon*(term1 - term2));
-                
-            //}
-        }
-    }
-    
-    return Pot;
-}
-
-
-
-//   Uses the derivative of the Lennard-Jones potential to calculate
-//   the forces on each atom.  Then uses a = F/m to calculate the
-//   accelleration of each atom. 
-void computeAccelerations() {
-    int i, j, k;
-    double f, rSqd;
+    double f, r2,term1,term2,rSqd;
     double rij[3]; // position of i relative to j
-    
+    Pot = 0;
     
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         for (k = 0; k < 3; k++) {
@@ -530,8 +490,85 @@ void computeAccelerations() {
             //double a_j_val_1 = a[j][1];
             //double a_j_val_2 = a[j][2];
             // initialize r^2 to zero
-            rSqd = 0.;
-            
+
+            rSqd = 0.;       
+
+            for (k = 0; k < 3; k++) {
+                //  component-by-componenent position of i relative to j
+                //r2 += (r[i][k]-r[j][k])*(r[i][k]-r[j][k]);
+                rij[k] = r[i][k] - r[j][k];
+                //rij[0] = r[i][0] - r[j][0];
+                //rij[1] = r[i][1] - r[j][1];
+                //rij[2] = r[i][2] - r[j][2];
+                //  sum of squares of the components
+                rSqd += rij[k] * rij[k];
+                //rSqd += rij[0] * rij[0];
+                //rSqd += rij[1] * rij[1];
+                //rSqd += rij[2] * rij[2];
+            }
+            double rSqd_inv = 1./rSqd;
+            //rnorm=sqrt(r2);
+            //quot=sigma/rnorm;
+            //double r2_invert=sigma/r2;
+            //term1 = pow(quot,12.);
+            //term2 = pow(quot,6.);
+            term2 = rSqd_inv*rSqd_inv*rSqd_inv;//pow(quot,6.);
+            term1 = term2*term2;
+            Pot += 2*(4*epsilon*(term1 - term2));
+            //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
+            f = 24 * (2 * (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv) - (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv));
+            //f = 24 * (2 * (pow(rSqd,-7)) - (pow(rSqd,-4)));
+            for (k = 0; k < 3; k++) {
+                //  from F = ma, where m = 1 in natural units!
+                a[i][k] += rij[k] * f;
+                //a_i_val_0 += rij[0] * f;
+                //a_i_val_1 += rij[1] * f;
+                //a_i_val_2 += rij[2] * f;
+                a[j][k] -=rij[k] * f;
+                //a_j_val_0 -= rij[0] * f;
+                //a_j_val_1 -= rij[1] * f;
+                //a_j_val_2 -= rij[2] * f;
+            }
+        }
+    }
+}
+
+
+
+//   Uses the derivative of the Lennard-Jones potential to calculate
+//   the forces on each atom.  Then uses a = F/m to calculate the
+//   accelleration of each atom. 
+void computeAccelerations() {
+    int i, j, k;
+    double f, rSqd;
+    double rij[3]; // position of i relative to j
+    Pot = 0;
+    
+    for (i = 0; i < N; i++) {  // set all accelerations to zero
+        for (k = 0; k < 3; k++) {
+            a[i][k] = 0;
+        }
+    }
+    for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
+        //double i_val_0 = r[i][0];
+        //double i_val_1 = r[i][1];
+        //double i_val_2 = r[i][2];
+        
+        //double a_i_val_0 = a[i][0];
+        //double a_i_val_1 = a[i][1];
+        //double a_i_val_2 = a[i][2];
+        for (j = i+1; j < N; j++) {
+            //double j_val_0 = r[j][0];
+            //double j_val_1 = r[j][1];
+            //double j_val_2 = r[j][2];
+
+            //double a_j_val_0 = a[j][0];
+            //double a_j_val_1 = a[j][1];
+            //double a_j_val_2 = a[j][2];
+            // initialize r^2 to zero
+
+            rSqd = 0.;       
+
             for (k = 0; k < 3; k++) {
                 //  component-by-componenent position of i relative to j
                 rij[k] = r[i][k] - r[j][k];
@@ -583,7 +620,7 @@ double VelocityVerlet(double dt, int iter, FILE *fp) {
         //printf("  %i  %6.4e   %6.4e   %6.4e\n",i,r[i][0],r[i][1],r[i][2]);
     }
     //  Update accellerations from updated positions
-    computeAccelerations();
+    Potential_plus_Accelaration();
     //  Update velocity with updated acceleration
     for (i=0; i<N; i++) {
         for (j=0; j<3; j++) {

@@ -316,7 +316,6 @@ int main()
         //  We would also like to use the IGL to try to see if we can extract the gas constant
         mvs = MeanSquaredVelocity();
         KE = Kinetic();
-        //PE = Potential();
         //computeAccelerations();
         // Temperature from Kinetic Theory
         Temp = m*mvs/(3*kB) * TempFac;
@@ -474,60 +473,27 @@ void Potential_plus_Accelaration() {
         }
     }
     for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
-        //double i_val_0 = r[i][0];
-        //double i_val_1 = r[i][1];
-        //double i_val_2 = r[i][2];
-        
-        //double a_i_val_0 = a[i][0];
-        //double a_i_val_1 = a[i][1];
-        //double a_i_val_2 = a[i][2];
         for (j = i+1; j < N; j++) {
-            //double j_val_0 = r[j][0];
-            //double j_val_1 = r[j][1];
-            //double j_val_2 = r[j][2];
-
-            //double a_j_val_0 = a[j][0];
-            //double a_j_val_1 = a[j][1];
-            //double a_j_val_2 = a[j][2];
             // initialize r^2 to zero
-
             rSqd = 0.;       
 
             for (k = 0; k < 3; k++) {
                 //  component-by-componenent position of i relative to j
-                //r2 += (r[i][k]-r[j][k])*(r[i][k]-r[j][k]);
                 rij[k] = r[i][k] - r[j][k];
-                //rij[0] = r[i][0] - r[j][0];
-                //rij[1] = r[i][1] - r[j][1];
-                //rij[2] = r[i][2] - r[j][2];
                 //  sum of squares of the components
                 rSqd += rij[k] * rij[k];
-                //rSqd += rij[0] * rij[0];
-                //rSqd += rij[1] * rij[1];
-                //rSqd += rij[2] * rij[2];
             }
             double rSqd_inv = 1./rSqd;
-            //rnorm=sqrt(r2);
-            //quot=sigma/rnorm;
-            //double r2_invert=sigma/r2;
-            //term1 = pow(quot,12.);
-            //term2 = pow(quot,6.);
             term2 = rSqd_inv*rSqd_inv*rSqd_inv;//pow(quot,6.);
             term1 = term2*term2;
             Pot += 2*(4*epsilon*(term1 - term2));
             //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
             f = 24 * (2 * (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv) - (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv));
-            //f = 24 * (2 * (pow(rSqd,-7)) - (pow(rSqd,-4)));
             for (k = 0; k < 3; k++) {
                 //  from F = ma, where m = 1 in natural units!
                 a[i][k] += rij[k] * f;
-                //a_i_val_0 += rij[0] * f;
-                //a_i_val_1 += rij[1] * f;
-                //a_i_val_2 += rij[2] * f;
+
                 a[j][k] -=rij[k] * f;
-                //a_j_val_0 -= rij[0] * f;
-                //a_j_val_1 -= rij[1] * f;
-                //a_j_val_2 -= rij[2] * f;
             }
         }
     }
@@ -550,21 +516,8 @@ void computeAccelerations() {
         }
     }
     for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
-        //double i_val_0 = r[i][0];
-        //double i_val_1 = r[i][1];
-        //double i_val_2 = r[i][2];
-        
-        //double a_i_val_0 = a[i][0];
-        //double a_i_val_1 = a[i][1];
-        //double a_i_val_2 = a[i][2];
-        for (j = i+1; j < N; j++) {
-            //double j_val_0 = r[j][0];
-            //double j_val_1 = r[j][1];
-            //double j_val_2 = r[j][2];
 
-            //double a_j_val_0 = a[j][0];
-            //double a_j_val_1 = a[j][1];
-            //double a_j_val_2 = a[j][2];
+        for (j = i+1; j < N; j++) {
             // initialize r^2 to zero
 
             rSqd = 0.;       
@@ -572,14 +525,8 @@ void computeAccelerations() {
             for (k = 0; k < 3; k++) {
                 //  component-by-componenent position of i relative to j
                 rij[k] = r[i][k] - r[j][k];
-                //rij[0] = r[i][0] - r[j][0];
-                //rij[1] = r[i][1] - r[j][1];
-                //rij[2] = r[i][2] - r[j][2];
                 //  sum of squares of the components
                 rSqd += rij[k] * rij[k];
-                //rSqd += rij[0] * rij[0];
-                //rSqd += rij[1] * rij[1];
-                //rSqd += rij[2] * rij[2];
             }
             double rSqd_inv = 1./rSqd;
             //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
@@ -588,13 +535,8 @@ void computeAccelerations() {
             for (k = 0; k < 3; k++) {
                 //  from F = ma, where m = 1 in natural units!
                 a[i][k] += rij[k] * f;
-                //a_i_val_0 += rij[0] * f;
-                //a_i_val_1 += rij[1] * f;
-                //a_i_val_2 += rij[2] * f;
+
                 a[j][k] -=rij[k] * f;
-                //a_j_val_0 -= rij[0] * f;
-                //a_j_val_1 -= rij[1] * f;
-                //a_j_val_2 -= rij[2] * f;
             }
         }
     }

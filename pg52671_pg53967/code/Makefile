@@ -1,6 +1,6 @@
 CC = gcc
 SRC = src/
-CFLAGS = -O2 -funroll-loops -ftree-vectorize -msse4
+CFLAGS = -Ofast -ftree-vectorize -msse4
 .DEFAULT_GOAL = MD.exe
 
 MD.exe: $(SRC)/MD.cpp

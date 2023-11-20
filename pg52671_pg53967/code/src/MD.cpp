@@ -216,7 +216,7 @@ int main()
     
     //scanf("%lf",&rho);
     rho=35000;
-    N = 10*216;
+    N = 5000;
     Vol = N/(rho*NA);
     
     Vol /= VolFac;
@@ -463,41 +463,60 @@ double Kinetic() { //Write Function here!
 // Function to calculate the potential energy of the system
 void Potential_plus_Accelaration() {
     int i, j, k;
-    double f, r2,term1,term2,rSqd;
-    double rij[3]; // position of i relative to j
+
     Pot = 0;
-    
-    for (i = 0; i < N; i++) {  // set all accelerations to zero
+
+    // set all accelerations to zero
+    #pragma omp for
+    for (i = 0; i < N; i++) {
         for (k = 0; k < 3; k++) {
             a[i][k] = 0;
         }
     }
-    for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
-        for (j = i+1; j < N; j++) {
-            // initialize r^2 to zero
-            rSqd = 0.;       
 
-            for (k = 0; k < 3; k++) {
-                //  component-by-componenent position of i relative to j
-                rij[k] = r[i][k] - r[j][k];
-                //  sum of squares of the components
-                rSqd += rij[k] * rij[k];
-            }
-            double rSqd_inv = 1./rSqd;
-            term2 = rSqd_inv*rSqd_inv*rSqd_inv;//pow(quot,6.);
-            term1 = term2*term2;
-            Pot += 2*(4*epsilon*(term1 - term2));
-            //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-            f = 24 * (2 * (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv) - (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv));
-            for (k = 0; k < 3; k++) {
-                //  from F = ma, where m = 1 in natural units!
-                a[i][k] += rij[k] * f;
+    #pragma omp parallel num_threads(4) reduction(+:Pot)
+    {
 
-                a[j][k] -=rij[k] * f;
-            }
+        int i, j, k;
+        double f, term1, term2, rSqd;
+        double rij[3];
+        // loop over all distinct pairs i, j
+        #pragma omp for private(j, rSqd, k, f, term1, term2)
+        for (i = 0; i < N - 1; i++) {
+            for (j = i + 1; j < N; j++) {
+                // initialize r^2 to zero
+                rSqd = 0.;
+
+
+                for (k = 0; k < 3; k++) {
+                    // component-by-component position of i relative to j
+                    rij[k] = r[i][k] - r[j][k];
+                    // sum of squares of the components
+                    rSqd += rij[k] * rij[k];
+                }
+
+                double rSqd_inv = 1.0 / rSqd;
+                term2 = rSqd_inv * rSqd_inv * rSqd_inv; // pow(quot,6.);
+                term1 = term2 * term2;
+                Pot += 2 * (4 * epsilon * (term1 - term2));
+
+                // From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
+                f = 24 * (2 * (rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv) -
+                        (rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv));
+
+                for (k = 0; k < 3; k++) {
+                    // from F = ma, where m = 1 in natural units!
+                    #pragma omp atomic
+                    a[i][k] += rij[k] * f;
+                    #pragma omp atomic
+                    a[j][k] -= rij[k] * f;
+                }
+            }  
         }
     }
 }
+
+
 
 
 
@@ -505,41 +524,45 @@ void Potential_plus_Accelaration() {
 //   the forces on each atom.  Then uses a = F/m to calculate the
 //   accelleration of each atom. 
 void computeAccelerations() {
-    int i, j, k;
-    double f, rSqd;
-    double rij[3]; // position of i relative to j
-    Pot = 0;
+    int i, k;
+    
     
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         for (k = 0; k < 3; k++) {
             a[i][k] = 0;
         }
     }
-    for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
-
-        for (j = i+1; j < N; j++) {
-            // initialize r^2 to zero
-
-            rSqd = 0.;       
-
-            for (k = 0; k < 3; k++) {
-                //  component-by-componenent position of i relative to j
-                rij[k] = r[i][k] - r[j][k];
-                //  sum of squares of the components
-                rSqd += rij[k] * rij[k];
-            }
-            double rSqd_inv = 1./rSqd;
-            //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-            f = 24 * (2 * (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv) - (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv));
-            //f = 24 * (2 * (pow(rSqd,-7)) - (pow(rSqd,-4)));
-            for (k = 0; k < 3; k++) {
-                //  from F = ma, where m = 1 in natural units!
-                a[i][k] += rij[k] * f;
-
-                a[j][k] -=rij[k] * f;
+    #pragma omp parallel num_threads(4)
+    {   
+        int j;
+        double  f, rSqd;
+        double rij[3]; // position of i relative to j
+        #pragma omp for private(j, rSqd, k, f)
+        for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
+            for (j = i+1; j < N; j++) {
+                // initialize r^2 to zero
+                rSqd = 0.;       
+                #pragma simd
+                for (k = 0; k < 3; k++) {
+                    //  component-by-componenent position of i relative to j
+                    rij[k] = r[i][k] - r[j][k];
+                    //  sum of squares of the components
+                    rSqd += rij[k] * rij[k];
+                }
+                double rSqd_inv = 1./rSqd;
+                //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
+                f = 24 * (2 * (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv) - (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv));
+                //f = 24 * (2 * (pow(rSqd,-7)) - (pow(rSqd,-4)));
+                for (k = 0; k < 3; k++) {
+                    //  from F = ma, where m = 1 in natural units!
+                    #pragma omp atomic
+                    a[i][k] += rij[k] * f;
+                    #pragma omp atomic
+                    a[j][k] -=rij[k] * f;
+                }
             }
         }
-    }
+    }  
 }
 
 // returns sum of dv/dt*m/A (aka Pressure) from elastic collisions with walls

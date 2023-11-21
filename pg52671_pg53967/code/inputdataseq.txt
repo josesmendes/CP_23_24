@@ -1,0 +1,4 @@
+versaoSeq
+Ar
+100
+35000

@@ -27,6 +27,8 @@
 #include<stdlib.h>
 #include<math.h>
 #include<string.h>
+#include <omp.h>
+#include <immintrin.h>
 
 
 // Number of particles
@@ -60,15 +62,13 @@ double F[MAXPART][3];
 
 // atom type
 char atype[10];
-//pot
-double Pot;
 //  Function prototypes
 //  initialize positions on simple cubic lattice, also calls function to initialize velocities
-void initialize();  
+void initialize();
 //  update positions and velocities using Velocity Verlet algorithm 
 //  print particle coordinates to file for rendering via VMD or other animation software
 //  return 'instantaneous pressure'
-double VelocityVerlet(double dt, int iter, FILE *fp);  
+double VelocityVerlet(double dt, int iter, FILE *fp);
 //  Compute Force using F = -dV/dr
 //  solve F = ma for use in Velocity Verlet
 void computeAccelerations();
@@ -77,20 +77,24 @@ double gaussdist();
 //  Initialize velocities according to user-supplied initial Temperature (Tinit)
 void initializeVelocities();
 //  Compute total potential energy from particle coordinates
-void Potential_plus_Accelaration();
+double Potential();
 //  Compute mean squared velocity from particle velocities
 double MeanSquaredVelocity();
 //  Compute total kinetic energy from particle mass and velocities
 double Kinetic();
 
+// 2 in 1
+void computeAccelerations_and_Potential();
+double current_Potential = 0.; //potential of the current iteration -> will be assigned to this variable whenever the accelerations are computed
+
 int main()
 {
-    
+   
     //  variable delcarations
     int i;
     double dt, Vol, Temp, Press, Pavg, Tavg, rho;
     double VolFac, TempFac, PressFac, timefac;
-    double KE, mvs, gc, Z;
+    double KE, PE, mvs, gc, Z;
     char trash[10000], prefix[1000], tfn[1000], ofn[1000], afn[1000];
     FILE *infp, *tfp, *ofp, *afp;
     
@@ -138,6 +142,7 @@ int main()
     printf("  FOR XENON,   TYPE 'Xe' THEN PRESS 'return' TO CONTINUE\n");
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     scanf("%s",atype);
+    //strcpy(atype,"Ar"); 
     
     if (strcmp(atype,"He")==0) {
         
@@ -198,7 +203,7 @@ int main()
     printf("  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
     printf("\n\n  ENTER THE INTIAL TEMPERATURE OF YOUR GAS IN KELVIN\n");
     scanf("%lf",&Tinit);
-
+    //Tinit = 100.;
     // Make sure temperature is a positive number!
     if (Tinit<0.) {
         printf("\n  !!!!! ABSOLUTE TEMPERATURE MUST BE A POSITIVE NUMBER!  PLEASE TRY AGAIN WITH A POSITIVE TEMPERATURE!!!\n");
@@ -213,8 +218,9 @@ int main()
     printf("  NUMBER DENSITY OF LIQUID ARGON AT 1 ATM AND 87 K IS ABOUT 35000 moles/m^3\n");
     
     scanf("%lf",&rho);
-
-    N = 5000;
+    //rho = 35000.;
+    
+    N = 5000;//10*216;
     Vol = N/(rho*NA);
     
     Vol /= VolFac;
@@ -249,7 +255,7 @@ int main()
     
     int NumTime;
     if (strcmp(atype,"He")==0) {
-        
+         
         // dt in natural units of time s.t. in SI it is 5 f.s. for all other gasses
         dt = 0.2e-14/timefac;
         //  We will run the simulation for NumTime timesteps.
@@ -270,8 +276,8 @@ int main()
     //  Based on their positions, calculate the ininial intermolecular forces
     //  The accellerations of each particle will be defined from the forces and their
     //  mass, and this will allow us to update their positions via Newton's law
-    computeAccelerations();
-    
+    computeAccelerations_and_Potential();
+    //computeAccelerations();
     
     // Print number of particles to the trajectory file
     fprintf(tfp,"%i\n",N);
@@ -314,7 +320,8 @@ int main()
         //  We would also like to use the IGL to try to see if we can extract the gas constant
         mvs = MeanSquaredVelocity();
         KE = Kinetic();
-        //computeAccelerations();
+        PE = current_Potential;
+        //PE = Potential();
         // Temperature from Kinetic Theory
         Temp = m*mvs/(3*kB) * TempFac;
         
@@ -327,7 +334,7 @@ int main()
         Tavg += Temp;
         Pavg += Press;
         
-        fprintf(ofp,"  %8.4e  %20.12f  %20.12f %20.12f  %20.12f  %20.12f \n",i*dt*timefac,Temp,Press,KE, Pot, KE+Pot);
+        fprintf(ofp,"  %8.4e  %20.12f  %20.12f %20.12f  %20.12f  %20.12f \n",i*dt*timefac,Temp,Press,KE, PE, KE+PE);
         
         
     }
@@ -348,7 +355,7 @@ int main()
     printf("\n  AVERAGE TEMPERATURE (K):                 %15.5f\n",Tavg);
     printf("\n  AVERAGE PRESSURE  (Pa):                  %15.5f\n",Pavg);
     printf("\n  PV/nT (J * mol^-1 K^-1):                 %15.5f\n",gc);
-    printf("\n  PERCENT ERROR of pV/nT AND GAS CONSTANT: %15.5f\n",100*fabs(gc-8.3144598)/8.3144598);
+    printf("\n  PERC#include <immintrin.h>ENT ERROR of pV/nT AND GAS CONSTANT: %15.5f\n",100*fabs(gc-8.3144598)/8.3144598);
     printf("\n  THE COMPRESSIBILITY (unitless):          %15.5f \n",Z);
     printf("\n  TOTAL VOLUME (m^3):                      %10.5e \n",Vol*VolFac);
     printf("\n  NUMBER OF PARTICLES (unitless):          %i \n", N);
@@ -390,7 +397,6 @@ void initialize() {
             }
         }
     }
-    
     // Call function to initialize velocities
     initializeVelocities();
     
@@ -457,63 +463,101 @@ double Kinetic() { //Write Function here!
     
 }
 
-
 // Function to calculate the potential energy of the system
-void Potential_plus_Accelaration() {
+double Potential() {
+    double quot, r2, rnorm, term1, term2, Pot, diff;
     int i, j, k;
+    double epsilon4 = 4.0 * epsilon;
 
-    Pot = 0;
-
-    // set all accelerations to zero
-    #pragma omp for
+    Pot=0.;
+    #pragma omp parallel for private(j, k, r2, quot, term1, term2, diff)
     for (i = 0; i < N; i++) {
-        for (k = 0; k < 3; k++) {
-            a[i][k] = 0;
-        }
-    }
-
-    #pragma omp parallel num_threads(4) reduction(+:Pot)
-    {
-
-        int i, j, k;
-        double f, term1, term2, rSqd;
-        double rij[3];
-        // loop over all distinct pairs i, j
-        #pragma omp for private(j, rSqd, k, f, term1, term2)
-        for (i = 0; i < N - 1; i++) {
-            for (j = i + 1; j < N; j++) {
-                // initialize r^2 to zero
-                rSqd = 0.;
-
-
-                for (k = 0; k < 3; k++) {
-                    // component-by-component position of i relative to j
-                    rij[k] = r[i][k] - r[j][k];
-                    // sum of squares of the components
-                    rSqd += rij[k] * rij[k];
-                }
-
-                double rSqd_inv = 1.0 / rSqd;
-                term2 = rSqd_inv * rSqd_inv * rSqd_inv; // pow(quot,6.);
+    double my_pot = 0.0;
+    for (j = i+1; j < N; j++) {
+            r2 = 0.0;
+            for (k = 0; k < 3; k++) {
+                diff = r[i][k] - r[j][k];
+                r2 += diff * diff;
+            }
+                quot=sigma * (1/r2);
+                term2 = quot * quot * quot;
                 term1 = term2 * term2;
-                Pot += 2 * (4 * epsilon * (term1 - term2));
-
-                // From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-                f = 24 * (2 * (rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv) -
-                        (rSqd_inv * rSqd_inv * rSqd_inv * rSqd_inv));
-
-                for (k = 0; k < 3; k++) {
-                    // from F = ma, where m = 1 in natural units!
-                    #pragma omp atomic
-                    a[i][k] += rij[k] * f;
-                    #pragma omp atomic
-                    a[j][k] -= rij[k] * f;
-                }
-            }  
+                my_pot += ((epsilon4*(term1 - term2))*2);
         }
+        Pot += my_pot;
     }
+    return Pot;
 }
 
+
+void computeAccelerations_and_Potential()
+{
+    int i,k;
+    //acceleration variables
+    //double f, rSqd,rev_rsqd, rsqd3;
+    //double rij[3]; // position of i relative to j
+    //potential variables
+    //double quot, r2, rnorm, term1, term2, Pot, diff;
+    double epsilon4 = 4.0 * epsilon;
+    double b[MAXPART][3];
+    current_Potential = 0.; //reset potential for this iteration
+    for (i = 0; i < N; i++) {  // set all accelerations to zero
+        for (k = 0; k < 3; k++) {
+            a[i][k] = 0.;
+            b[i][k] = 0.;
+        }
+    }
+    
+    #pragma omp parallel firstprivate(b)
+    {
+    #pragma omp scheduled(static)
+    #pragma omp for reduction(+:current_Potential) 
+    for (i = 0; i < N-1; i++) {
+         double my_f, my_rSqd,my_rev_rsqd, my_rsqd3; 
+         double my_quot, my_r2, my_rnorm, my_term1, my_term2, my_diff;
+         double my_rij[3];
+         int j;
+        for (j = i+1; j < N; j++) {
+            int my_k = 0;
+            my_rSqd = 0.;
+            my_r2 = 0.;
+
+            #pragma simd
+            for (my_k = 0; my_k < 3; my_k++) {
+                my_rij[my_k] = r[i][my_k] - r[j][my_k];
+                my_rSqd += my_rij[my_k] * my_rij[my_k];
+
+                //CALCULAR R2 PARA POTENCIAL
+                my_diff = r[i][my_k] - r[j][my_k];
+                my_r2 += my_diff * my_diff;
+            }
+
+            my_rev_rsqd = 1/my_rSqd;
+            my_rsqd3 = my_rev_rsqd * my_rev_rsqd * my_rev_rsqd;
+            my_f = 24.0 * (my_rsqd3 * my_rev_rsqd) * (2.0 * (my_rsqd3) - 1.0);
+            
+            #pragma omp simd
+            for (my_k = 0; my_k < 3; my_k++) {
+                double curr_a = my_rij[my_k] * my_f;                    
+                //  from F = ma, where m = 1 in natural units!
+                b[i][my_k] += curr_a;
+                b[j][my_k] -= curr_a;
+            }
+
+            my_quot=sigma * (1/my_r2);
+            my_term2 = my_quot * my_quot * my_quot;
+            my_term1 = my_term2 * my_term2;
+            current_Potential += ((epsilon4*(my_term1 - my_term2))*2);
+        }
+    }
+    #pragma omp critical
+    {
+    for(i=0;i<N;i++)
+        for(k=0;k<3;k++)
+            a[i][k] += b[i][k];
+    }
+    }
+}
 
 
 
@@ -522,45 +566,45 @@ void Potential_plus_Accelaration() {
 //   the forces on each atom.  Then uses a = F/m to calculate the
 //   accelleration of each atom. 
 void computeAccelerations() {
-    int i, k;
-    
+    int i, j, k;
+    double f, rSqd,rev_rsqd, rsqd3, const_24;
+    double rij[3]; // position of i relative to j
+    const_24 = 24.0;
     
     for (i = 0; i < N; i++) {  // set all accelerations to zero
         for (k = 0; k < 3; k++) {
             a[i][k] = 0;
         }
     }
-    #pragma omp parallel num_threads(4)
-    {   
-        int j;
-        double  f, rSqd;
-        double rij[3]; // position of i relative to j
-        #pragma omp for private(j, rSqd, k, f)
-        for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
-            for (j = i+1; j < N; j++) {
-                // initialize r^2 to zero
-                rSqd = 0.;       
-                #pragma simd
-                for (k = 0; k < 3; k++) {
-                    //  component-by-componenent position of i relative to j
-                    rij[k] = r[i][k] - r[j][k];
-                    //  sum of squares of the components
-                    rSqd += rij[k] * rij[k];
-                }
-                double rSqd_inv = 1./rSqd;
-                //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
-                f = 24 * (2 * (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv) - (rSqd_inv*rSqd_inv*rSqd_inv*rSqd_inv));
-                //f = 24 * (2 * (pow(rSqd,-7)) - (pow(rSqd,-4)));
-                for (k = 0; k < 3; k++) {
-                    //  from F = ma, where m = 1 in natural units!
-                    #pragma omp atomic
-                    a[i][k] += rij[k] * f;
-                    #pragma omp atomic
-                    a[j][k] -=rij[k] * f;
-                }
+    //#pragma omp paralell shared(a, r, N, const_24)
+    #pragma omp paralell for 
+    for (i = 0; i < N-1; i++) {   // loop over all distinct pairs i,j
+        #pragma omp paralell for private(j, k, f, rSqd, rev_rsqd, rsqd3, rij)
+        for (j = i+1; j < N; j++) {
+            // initialize r^2 to zero
+            rSqd = 0.;
+            // #pragma omp simd
+            for (k = 0; k < 3; k++) {
+                //  component-by-componenent position of i relative to j
+                rij[k] = r[i][k] - r[j][k];
+                //  sum of squares of the components
+                rSqd += rij[k] * rij[k];
+            }
+            
+            //  From derivative of Lennard-Jones with sigma and epsilon set equal to 1 in natural units!
+            rev_rsqd = 1/rSqd;
+            rsqd3 = rev_rsqd * rev_rsqd * rev_rsqd;
+
+            f = const_24 * (rsqd3 * rev_rsqd) * (2.0 * (rsqd3) - 1.0);
+            #pragma omp simd
+            for (k = 0; k < 3; k++) {
+                double accel = rij[k] * f;
+                //  from F = ma, where m = 1 in natural units!
+                a[i][k] += accel;
+                a[j][k] -= accel;
             }
         }
-    }  
+    }
 }
 
 // returns sum of dv/dt*m/A (aka Pressure) from elastic collisions with walls
@@ -577,13 +621,12 @@ double VelocityVerlet(double dt, int iter, FILE *fp) {
     for (i=0; i<N; i++) {
         for (j=0; j<3; j++) {
             r[i][j] += v[i][j]*dt + 0.5*a[i][j]*dt*dt;
-            
             v[i][j] += 0.5*a[i][j]*dt;
         }
         //printf("  %i  %6.4e   %6.4e   %6.4e\n",i,r[i][0],r[i][1],r[i][2]);
     }
-    //  Update accellerations from updated positions
-    Potential_plus_Accelaration();
+    //  Update accellerations from updated positions (And calculate the potential while we're at it)
+    computeAccelerations_and_Potential();
     //  Update velocity with updated acceleration
     for (i=0; i<N; i++) {
         for (j=0; j<3; j++) {
@@ -626,11 +669,13 @@ void initializeVelocities() {
     
     for (i=0; i<N; i++) {
         
-        for (j=0; j<3; j++) {
+        //for (j=0; j<3; j++) {
             //  Pull a number from a Gaussian Distribution
-            v[i][j] = gaussdist();
+            v[i][0] = gaussdist();
+            v[i][1] = gaussdist();
+            v[i][2] = gaussdist();
             
-        }
+        //}
     }
     
     // Vcm = sum_i^N  m*v_i/  sum_i^N  M
@@ -653,11 +698,13 @@ void initializeVelocities() {
     //  center of mass velocity to zero so that the system does
     //  not drift in space!
     for (i=0; i<N; i++) {
-        for (j=0; j<3; j++) {
+        //for (j=0; j<3; j++) {
             
-            v[i][j] -= vCM[j];
+            v[i][0] -= vCM[0];
+            v[i][1] -= vCM[1];
+            v[i][2] -= vCM[2];
             
-        }
+        //}
     }
     
     //  Now we want to scale the average velocity of the system
@@ -666,9 +713,7 @@ void initializeVelocities() {
     vSqdSum=0.;
     for (i=0; i<N; i++) {
         for (j=0; j<3; j++) {
-            
             vSqdSum += v[i][j]*v[i][j];
-            
         }
     }
     

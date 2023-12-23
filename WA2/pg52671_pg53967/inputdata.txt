@@ -1,0 +1,4 @@
+versaoPar
+Ar
+100
+35000
